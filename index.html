@@ -3,588 +3,762 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Circus Diploma Widget</title>
+<title>Circus Diploma — Interactive Booking Widget</title>
+
+<!-- Supabase client via CDN -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.25.0/dist/umd/supabase.min.js"></script>
+
 <style>
   :root{
-    --bg:#ffffff; --card:#f7f7f7; --text:#0a0a0a; --edge:#000;
-    --accent1:#9fd8d6; --accent2:#f1d08a; --accent3:#f3c1d1;
+    --bg:#ffffff; --card:#f6f6f8; --text:#0a0a0a; --edge:#0a0a0a;
+    --accent1:#6bb3b1; /* deeper teal */
+    --accent2:#c9a253; /* deeper mustard */
+    --accent3:#d98aa2; /* deeper pink */
+    --sliceGrey:#e9e9ea;
+    --divider:#5a5a5a; /* darker grey dividing lines */
     --muted:rgba(0,0,0,0.06);
-    --glass: rgba(255,255,255,0.6);
-    --shadow: 0 6px 20px rgba(0,0,0,0.08);
     font-family: "Consolas", ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
   }
   [data-theme="dark"]{
-    --bg:#0b0b0b; --card:#0f0f0f; --text:#f6f6f6; --edge:#fff;
-    --muted: rgba(255,255,255,0.03);
-    --glass: rgba(0,0,0,0.45);
+    --bg:#070707; --card:#0b0b0b; --text:#f6f6f6; --edge:#ffffff;
+    --sliceGrey:#1a1a1a;
+    --divider:#cfcfcf;
   }
 
   html,body{height:100%; margin:0; background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased;}
-  .wrap{max-width:1100px; margin:18px auto; padding:18px; box-sizing:border-box;}
-  .widget{display:flex; gap:28px; align-items:flex-start; justify-content:space-between; width:100%;}
-  .left{flex:0 1 620px; min-width:300px;}
-  .right{flex:1 1 360px; min-width:260px;}
-  .card{background:var(--card); border-radius:12px; padding:18px; box-shadow:var(--shadow); border:2px solid var(--muted); position:relative;}
-  .title{font-size:20px; margin:0 0 10px 0; font-weight:700; letter-spacing:0.6px;}
-  .subtitle{font-size:13px; opacity:0.8; margin-bottom:12px;}
-  /* Circle Map */
-  .circle-wrap{display:flex; align-items:center; justify-content:center; position:relative; height:420px;}
-  .pie-svg{width:100%; max-width:560px; height:auto; display:block;}
-  .slice{cursor:pointer; transition:transform .28s cubic-bezier(.2,.9,.2,1), filter .25s; transform-origin:center center;}
-  .slice:hover{transform:scale(1.03); filter:brightness(1.02);}
-  .center-circle{cursor:default; fill:var(--glass); stroke:var(--edge); stroke-width:1.8}
-  .label{font-size:12px; text-anchor:middle; fill:var(--text); pointer-events:none; font-weight:700;}
-  .iconsvg{width:20px;height:20px; vertical-align:middle; margin-right:6px;}
-  /* Sub-panel */
-  .panel{margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;}
-  .block-btn{background:transparent; border:1px solid var(--muted); padding:8px 12px; border-radius:8px; cursor:pointer; min-width:120px; text-align:center;}
-  .block-btn.active{border-color:var(--edge); box-shadow:0 6px 14px rgba(0,0,0,0.06); transform:translateY(-2px);}
-  .total{margin-top:16px; font-size:18px; font-weight:800;}
+  .wrap{max-width:1200px; margin:18px auto; padding:18px; box-sizing:border-box;}
+  .head{display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px;}
+  .title{font-size:20px; margin:0; font-weight:700;}
+  .subtitle{font-size:13px; opacity:0.85;}
+  .layout{display:flex; gap:20px; align-items:flex-start;}
+  .left{flex:0 1 66%; min-width:320px;}
+  .right{flex:1 1 34%; min-width:240px;}
+  .card{background:var(--card); border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.06); border:1px solid var(--muted);}
   .tiny{font-size:12px; opacity:0.85;}
-  .controls-row{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;}
-  .btn{padding:10px 14px; border-radius:10px; cursor:pointer; border:2px solid var(--edge); background:transparent; font-weight:700;}
+  /* SVG container for perfect square */
+  .svg-wrap{width:100%; display:flex; justify-content:center; align-items:center; padding:14px 6px;}
+  svg#pie { width:100%; height:auto; max-width:820px; display:block; }
+  /* slices styling */
+  .slice-path{stroke:var(--divider); stroke-width:6; /* thick dividing lines */ cursor:pointer; transition:fill .26s, transform .24s; transform-origin:center center;}
+  .slice-group { outline:none; }
+  .slice-group:focus .slice-path { stroke-width:7; }
+  .slice-label { font-size:13px; fill:var(--text); font-weight:700; pointer-events:none; text-anchor:middle; }
+  /* connecting lines & dot */
+  .conn-line{stroke:var(--divider); stroke-width:2; stroke-linecap:round; fill:none; opacity:0.9;}
+  .conn-dot{fill:var(--divider); opacity:0.95;}
+  /* block groups (absolute positioned) */
+  .block-group{position:absolute; background:transparent; border-radius:8px; pointer-events:auto; transition:transform .15s; z-index:20;}
+  .block-wrap{border:1.6px solid var(--divider); background:transparent; border-radius:10px; padding:10px; min-width:180px; display:flex; flex-direction:column; gap:8px;}
+  .block-row{display:flex; justify-content:space-between; align-items:center; gap:6px; padding:6px; border-radius:8px; cursor:pointer; background:transparent; transition:background .14s, transform .12s;}
+  .block-row.on{background:linear-gradient(180deg, rgba(0,0,0,0.02), rgba(0,0,0,0.01)); transform:translateY(-2px);}
+  .block-left{display:flex; flex-direction:column;}
+  .block-title{font-size:13px; font-weight:800;}
+  .block-months{font-size:12px; opacity:0.8;}
+  .block-price{font-weight:800; font-size:14px;}
+  /* total & action buttons */
+  .summary-total{font-size:22px; font-weight:900; margin-top:8px;}
+  .actions{display:flex; gap:8px; margin-top:10px;}
+  .btn{padding:10px 12px; border-radius:10px; cursor:pointer; border:2px solid var(--edge); background:transparent; font-weight:800;}
   .btn.primary{background:var(--edge); color:var(--bg);}
-  .muted-note{font-size:12px; opacity:0.7; margin-top:8px;}
-  /* Admin button */
-  .dev-btn{position:fixed; right:18px; bottom:18px; z-index:9999; border-radius:14px; padding:10px 12px; border:1px solid var(--muted); background:var(--card); cursor:pointer; box-shadow:var(--shadow);}
-  /* Admin modal */
-  .modal-back{position:fixed; inset:0; background:rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; z-index:10000;}
-  .modal{width:92%; max-width:720px; background:var(--card); border-radius:12px; padding:16px; border:1px solid var(--muted);}
+  .dev-btn{position:fixed; right:18px; bottom:18px; z-index:9999; border-radius:14px; padding:10px 12px; border:1px solid var(--muted); background:var(--card); cursor:pointer; box-shadow:0 6px 18px rgba(0,0,0,0.12);}
+  /* admin modal */
+  .modal-back{position:fixed; inset:0; background:rgba(0,0,0,0.45); display:flex; align-items:center; justify-content:center; z-index:10000;}
+  .modal{width:92%; max-width:880px; background:var(--card); border-radius:12px; padding:16px; border:1px solid var(--muted); max-height:86vh; overflow:auto;}
   .form-row{display:flex; gap:8px; margin-bottom:8px; align-items:center;}
-  .form-row label{min-width:120px; font-size:13px;}
+  .form-row label{min-width:130px; font-size:13px;}
   .form-row input, .form-row textarea, .form-row select{flex:1; padding:8px 10px; border-radius:8px; border:1px solid var(--muted); background:transparent; color:var(--text);}
   .small{font-size:12px;}
-  /* mobile */
+  /* responsive */
   @media (max-width:900px){
-    .widget{flex-direction:column;}
-    .left,.right{min-width:unset;}
-    .circle-wrap{height:360px;}
+    .layout{flex-direction:column;}
+    .left, .right{flex:unset;}
+    svg#pie{max-width:640px;}
   }
-  /* Progression lines */
-  .progress-line{stroke:var(--edge); stroke-width:3; fill:none; stroke-dasharray:1000; stroke-dashoffset:1000; opacity:0.08;}
-  .progress-line.on{animation:dash 1.2s forwards;}
-  @keyframes dash{to{stroke-dashoffset:0; opacity:1}}
-  /* silhouette animation */
-  .sil{opacity:0.95; transform-origin:center; animation:cycle 3.6s linear infinite;}
-  @keyframes cycle{0%{transform:translateY(0)}50%{transform:translateY(-6px)}100%{transform:translateY(0)}}
-  /* hover micro animations */
-  .pulse{transition:transform .2s, box-shadow .2s}
-  .pulse:hover{transform:translateY(-4px)}
-  /* price tag */
-  .price-tag{font-weight:800; font-size:16px;}
-  /* subtle focus */
-  .focus-outline:focus{outline:3px solid rgba(0,0,0,0.06); outline-offset:3px}
 </style>
 </head>
 <body>
-<div class="wrap" id="widgetRoot" data-theme="light">
-  <div style="display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:12px;">
+<div class="wrap" id="root" data-theme="light">
+  <div class="head">
     <div>
       <h1 class="title">Circus Diploma — Course Map</h1>
-      <div class="subtitle">Three blocks per year • Click a subject slice to book 1–3 blocks</div>
+      <div class="subtitle">Three 3-month blocks per year — click slices to choose subjects and blocks</div>
     </div>
-    <div style="text-align:right;">
+    <div style="text-align:right">
       <div class="tiny">Academic year: <span id="monthsLabel">Sept–June</span></div>
-      <div class="tiny" style="margin-top:8px">Theme: <span id="themeLabel">Light</span></div>
+      <div class="tiny" style="margin-top:6px">Theme: <span id="themeLabel">Light</span></div>
     </div>
   </div>
 
-  <div class="widget">
-    <div class="left card">
-      <div class="circle-wrap">
-        <!-- SVG Pie with slices -->
-        <svg class="pie-svg" viewBox="-250 -250 500 500" id="pieSvg" aria-label="Course map">
-          <!-- progress lines behind -->
-          <path class="progress-line" id="line1" d="M -200 0 A 200 200 0 0 1 200 0"></path>
-          <path class="progress-line" id="line2" d="M 0 -200 A 200 200 0 0 1 0 200"></path>
+  <div class="layout">
+    <div class="left card" style="position:relative; min-height:520px;">
+      <div class="svg-wrap" id="svgWrap">
+        <!-- SVG perfect circle with three equal slices -->
+        <!-- size uses viewBox square so circle is perfect -->
+        <svg id="pie" viewBox="-250 -250 500 500" role="img" aria-label="Course map" tabindex="0">
+          <!-- background circle (for consistent shape) -->
+          <circle cx="0" cy="0" r="200" fill="transparent" stroke="transparent"></circle>
 
-          <!-- Slice 1: Discipline (left) -->
-          <g id="slice-discipline" class="slice" data-key="discipline" transform="">
-            <path d="M 0 0 L -200 0 A 200 200 0 0 1 0 -200 z" fill="var(--accent1)" stroke="var(--edge)" stroke-width="1.2"></path>
-            <text x="-115" y="-70" class="label">Discipline</text>
-            <g transform="translate(-120,-30)">
-              <svg class="iconsvg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="none" fill="#000" opacity="0.08"/></svg>
-            </g>
+          <!-- thicker dividing lines will be drawn between slices using same paths stroke -->
+          <!-- Slices defined as groups for focus/tab navigation -->
+          <!-- Calculate arcs for equal thirds: angles at -90, 30, 150 degrees (top, top-right, top-left) -->
+          <!-- Slice 1 (Discipline) - center at left-top -->
+          <g id="g-discipline" class="slice-group" tabindex="0" data-key="discipline">
+            <path id="p-discipline" class="slice-path" d="" fill="var(--sliceGrey)"></path>
+            <text id="t-discipline" class="slice-label" x="-100" y="-90">Discipline</text>
           </g>
 
-          <!-- Slice 2: Performance (top-right) -->
-          <g id="slice-performance" class="slice" data-key="performance">
-            <path d="M0 0 L0 -200 A 200 200 0 0 1 173 -100 z" fill="var(--accent2)" stroke="var(--edge)" stroke-width="1.2"></path>
-            <text x="70" y="-120" class="label">Performance</text>
-            <g transform="translate(78,-120)">
-              <svg class="iconsvg" viewBox="0 0 24 24"><rect width="20" height="12" rx="2" ry="2" opacity="0.08" /></svg>
-            </g>
+          <!-- Slice 2 (Performance) -->
+          <g id="g-performance" class="slice-group" tabindex="0" data-key="performance">
+            <path id="p-performance" class="slice-path" d="" fill="var(--sliceGrey)"></path>
+            <text id="t-performance" class="slice-label" x="100" y="-90">Performance</text>
           </g>
 
-          <!-- Slice 3: Creative Project (right-bottom) -->
-          <g id="slice-creative" class="slice" data-key="creative">
-            <path d="M0 0 L173 -100 A200 200 0 0 1 -200 0 z" fill="var(--accent3)" stroke="var(--edge)" stroke-width="1.2"></path>
-            <text x="80" y="40" class="label">Creative Project</text>
-            <g transform="translate(80,30)">
-              <svg class="iconsvg" viewBox="0 0 24 24"><polygon points="0,20 12,0 24,20" opacity="0.08"/></svg>
-            </g>
+          <!-- Slice 3 (Creative) -->
+          <g id="g-creative" class="slice-group" tabindex="0" data-key="creative">
+            <path id="p-creative" class="slice-path" d="" fill="var(--sliceGrey)"></path>
+            <text id="t-creative" class="slice-label" x="0" y="110">Creative Project</text>
           </g>
 
-          <!-- center -->
-          <circle class="center-circle" cx="0" cy="0" r="70"></circle>
-          <text x="0" y="0" class="label" dy="6">Choose a subject</text>
+          <!-- center circle -->
+          <circle cx="0" cy="0" r="68" fill="rgba(255,255,255,0.02)" stroke="transparent"></circle>
+          <text x="0" y="0" text-anchor="middle" dy="6" class="slice-label" style="font-size:12px">Choose a subject</text>
 
-          <!-- silhouettes cycling around the circle -->
-          <g id="silhouettes" style="pointer-events:none">
-            <circle class="sil" cx="-140" cy="120" r="6" fill="var(--edge)" />
-            <rect class="sil" x="120" y="-130" width="10" height="6" rx="2" fill="var(--edge)" />
-            <ellipse class="sil" cx="140" cy="30" rx="7" ry="4" fill="var(--edge)" />
-          </g>
+          <!-- connectors (lines) will be added/updated dynamically -->
+          <g id="connectors"></g>
         </svg>
       </div>
 
-      <div class="panel" id="optionsPanel" aria-live="polite"></div>
+      <!-- block groups are absolutely positioned HTML elements (so they overlay the SVG) -->
+      <div id="blockGroups" style="position:absolute; left:0; top:0; right:0; bottom:0; pointer-events:none;"></div>
 
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:14px;">
+      <!-- total and actions -->
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-top:12px; gap:12px;">
         <div>
-          <div class="tiny muted-note">Selected: <span id="selectedLabel">None</span></div>
-          <div class="total">Total: <span id="totalPrice">£0</span></div>
+          <div class="tiny">Selected: <span id="selectedLabel">None</span></div>
+          <div class="summary-total">Total: <span id="totalPrice">£0</span></div>
         </div>
-        <div style="display:flex; gap:8px;">
-          <button class="btn primary" id="applyBtn">APPLY NOW</button>
-          <button class="btn" id="contactBtn">Contact course leader</button>
+
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <div class="actions">
+            <button class="btn primary" id="applyBtn">APPLY NOW</button>
+            <button class="btn" id="contactBtn">Contact course leader</button>
+          </div>
+          <div class="tiny">Toggle slices to show blocks. Toggle blocks to include them in the total.</div>
         </div>
       </div>
     </div>
 
     <div class="right card">
-      <div>
-        <div class="title" style="font-size:16px">Booking Summary</div>
-        <div class="subtitle tiny" id="summaryText">Choose a subject and number of blocks to see price & details.</div>
+      <div class="title" style="font-size:16px">Booking Summary</div>
+      <div style="margin-top:8px;">
+        <div class="tiny">Mentored courses to upskill, elevate, and accelerate your circus learning.</div>
+        <div style="margin-top:8px;">Make a new act, research ideas or redevelop an existing work.</div>
+        <div style="margin-top:10px; font-weight:800">— Booking: 1 block is as low as <span id="lowestBlockPrice">£0</span></div>
+        <div style="margin-top:8px;">Stay with us short or long term</div>
       </div>
 
       <div style="margin-top:12px;">
-        <div class="tiny">Blocks available</div>
-        <ul id="blocksList" style="padding-left:20px; margin-top:8px;">
-          <li><strong>Block 1:</strong> Sept–Dec</li>
-          <li><strong>Block 2:</strong> Jan–Mar</li>
-          <li><strong>Block 3:</strong> Apr–June</li>
+        <div class="tiny" style="font-weight:800; margin-bottom:6px">Blocks available</div>
+        <ul id="blocksList" style="padding-left:18px; margin-top:6px;">
+          <li id="b1">Block 1: Sept–Dec — <span class="price-tag" id="b1p">£0</span></li>
+          <li id="b2">Block 2: Jan–Mar — <span class="price-tag" id="b2p">£0</span></li>
+          <li id="b3">Block 3: Apr–June — <span class="price-tag" id="b3p">£0</span></li>
         </ul>
       </div>
 
-      <div style="margin-top:14px;">
-        <div class="tiny">Quick info</div>
-        <div class="muted-note" id="quickInfo">Each block = 3 months. Prices are editable via admin panel (🔒).</div>
-      </div>
-
-      <div style="margin-top:16px;">
-        <div class="tiny">Accessibility</div>
-        <div class="muted-note">Keyboard navigation and clear labels. Admin edits stored locally.</div>
+      <div style="margin-top:12px;">
+        <div class="tiny" style="font-weight:700">Quick info</div>
+        <div style="margin-top:6px;">Each block = 3 months. Prices are tailored to your pocket.</div>
+        <div style="margin-top:10px; font-weight:900">CIRCUS DIPLOMA: Accessibility, flexibility, possibility.</div>
+        <div style="margin-top:12px;">Dr Jonathan Priest FHEA</div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- admin button -->
-<button class="dev-btn" id="devButton" title="Open admin panel">⚙</button>
+<!-- Dev button -->
+<button class="dev-btn" id="devBtn" title="Admin panel — passcode required">⚙</button>
 
-<!-- password prompt modal container -->
-<div id="modalContainer" style="display:none;"></div>
+<!-- modal container -->
+<div id="modalRoot" style="display:none;"></div>
 
 <script>
-/* ---------------------------
-   Widget Data & State
-   --------------------------- */
-const defaultData = {
+/* --------------------------------------
+   Data model, defaults, and persistence
+   -------------------------------------- */
+const DEFAULT = {
   subjects: {
-    discipline: {
-      name: "Discipline",
-      desc: "Physical training focusing on Aerial, Acrobatics, or Manipulation.",
-      color: "#9fd8d6",
-      icon: "disc"
-    },
-    performance: {
-      name: "Performance",
-      desc: "Physical theatre & movement technique: making, direction, dance, contact improv.",
-      color: "#f1d08a",
-      icon: "perf"
-    },
-    creative: {
-      name: "Creative Project",
-      desc: "Mentored process to make a new act, research ideas or redevelop a piece.",
-      color: "#f3c1d1",
-      icon: "crea"
-    }
+    discipline: { name: "Discipline", short:"D", color: getComputedStyle(document.documentElement).getPropertyValue('--accent1').trim(), desc: "Physical training focusing on Aerial, Acrobatics, or Manipulation." },
+    performance: { name: "Performance", short:"P", color: getComputedStyle(document.documentElement).getPropertyValue('--accent2').trim(), desc: "Physical theatre & movement technique." },
+    creative: { name: "Creative Project", short:"CP", color: getComputedStyle(document.documentElement).getPropertyValue('--accent3').trim(), desc: "Mentored process to make or redevelop work." }
   },
   blocks: [
-    {id:1, label:"Block 1", months:"Sept–Dec", price:650},
-    {id:2, label:"Block 2", months:"Jan–Mar", price:650},
-    {id:3, label:"Block 3", months:"Block 3 Apr–June", price:650}
+    { id:1, label:"Block 1", months:"Sept–Dec", price:650 },
+    { id:2, label:"Block 2", months:"Jan–Mar", price:650 },
+    { id:3, label:"Block 3", months:"Apr–June", price:650 }
   ],
   currency: "£",
   theme: "light",
   applyUrl: "#",
   contactUrl: "mailto:course@example.com",
-  adminPass: "4629"
+  adminPass: "4629",
+  supabase: {
+    url: "",
+    anonKey: "",
+    table: "widget_settings",
+    rowId: "main"
+  }
 };
 
-function loadData(){
-  let raw = localStorage.getItem("circusDiplomaData");
-  if(!raw) { localStorage.setItem("circusDiplomaData", JSON.stringify(defaultData)); return JSON.parse(JSON.stringify(defaultData)); }
-  try { return Object.assign(JSON.parse(JSON.stringify(defaultData)), JSON.parse(raw)); } catch(e){ return JSON.parse(JSON.stringify(defaultData)); }
+// try load local settings (fallback)
+function loadLocal(){
+  try {
+    const raw = localStorage.getItem("circus_widget_data_v1");
+    if(!raw) { localStorage.setItem("circus_widget_data_v1", JSON.stringify(DEFAULT)); return JSON.parse(JSON.stringify(DEFAULT)); }
+    return Object.assign(JSON.parse(JSON.stringify(DEFAULT)), JSON.parse(raw));
+  } catch(e){ localStorage.setItem("circus_widget_data_v1", JSON.stringify(DEFAULT)); return JSON.parse(JSON.stringify(DEFAULT)); }
 }
-function saveData(d){ localStorage.setItem("circusDiplomaData", JSON.stringify(d)); }
+function saveLocal(data){
+  localStorage.setItem("circus_widget_data_v1", JSON.stringify(data));
+}
 
+// application state
 let state = {
-  data: loadData(),
-  selectedSubject: null,
-  selectedBlocks: 0
+  data: loadLocal(),
+  slices: { discipline:false, performance:false, creative:false }, // slice toggles
+  blocksOn: { // keyed by subject and block idx (1..3)
+    discipline: {1:false,2:false,3:false},
+    performance:{1:false,2:false,3:false},
+    creative:{1:false,2:false,3:false}
+  },
+  supabaseClient: null
 };
 
-/* ---------------------------
-   DOM Bindings & Helpers
-   --------------------------- */
-const root = document.getElementById("widgetRoot");
-const selectedLabel = document.getElementById("selectedLabel");
-const totalPrice = document.getElementById("totalPrice");
-const optionsPanel = document.getElementById("optionsPanel");
-const summaryText = document.getElementById("summaryText");
+/* --------------------------------------
+   Supabase helpers (global save/load)
+   -------------------------------------- */
+async function initSupabaseIfConfigured(){
+  if(!state.data.supabase.url || !state.data.supabase.anonKey) return null;
+  try {
+    // global supabase client
+    state.supabaseClient = supabase.createClient(state.data.supabase.url.trim(), state.data.supabase.anonKey.trim());
+    return state.supabaseClient;
+  } catch(e){
+    console.warn("Supabase init error", e);
+    return null;
+  }
+}
+
+/* load settings from supabase if keys set */
+async function loadFromSupabase(){
+  if(!state.data.supabase.url || !state.data.supabase.anonKey) return false;
+  await initSupabaseIfConfigured();
+  if(!state.supabaseClient) return false;
+  try {
+    // get row by id field (rowId)
+    const { data, error } = await state.supabaseClient
+      .from(state.data.supabase.table)
+      .select("data")
+      .eq("id", state.data.supabase.rowId)
+      .limit(1)
+      .single();
+    if(error) { console.warn("Supabase read error", error); return false; }
+    if(data && data.data){
+      // merge
+      state.data = Object.assign(JSON.parse(JSON.stringify(DEFAULT)), data.data);
+      saveLocal(state.data); // update local fallback
+      applyAllSettings();
+      return true;
+    }
+    return false;
+  } catch(e){
+    console.warn("Supabase read exception", e);
+    return false;
+  }
+}
+
+/* save settings to supabase */
+async function saveToSupabase(){
+  if(!state.supabaseClient) await initSupabaseIfConfigured();
+  if(!state.supabaseClient) throw new Error("Supabase not initialized or keys missing.");
+  try {
+    // Upsert row (id rowId) with JSON column 'data'
+    const payload = { id: state.data.supabase.rowId, data: state.data };
+    const { data, error } = await state.supabaseClient.from(state.data.supabase.table).upsert(payload, { returning: "representation" });
+    if(error) { throw error; }
+    return data;
+  } catch(e){
+    throw e;
+  }
+}
+
+/* --------------------------------------
+   DOM elements & helpers
+   -------------------------------------- */
+const root = document.getElementById("root");
 const monthsLabel = document.getElementById("monthsLabel");
 const themeLabel = document.getElementById("themeLabel");
+const selectedLabel = document.getElementById("selectedLabel");
+const totalPriceEl = document.getElementById("totalPrice");
 const blocksList = document.getElementById("blocksList");
 const applyBtn = document.getElementById("applyBtn");
 const contactBtn = document.getElementById("contactBtn");
-const devButton = document.getElementById("devButton");
-const modalContainer = document.getElementById("modalContainer");
-const pieSvg = document.getElementById("pieSvg");
+const devBtn = document.getElementById("devBtn");
+const modalRoot = document.getElementById("modalRoot");
+const svg = document.getElementById("pie");
+const svgWrap = document.getElementById("svgWrap");
+const connectorsG = document.getElementById("connectors");
+const blockGroupsContainer = document.getElementById("blockGroups");
+const lowestBlockPriceEl = document.getElementById("lowestBlockPrice");
+const b1p = document.getElementById("b1p"), b2p = document.getElementById("b2p"), b3p = document.getElementById("b3p");
 
-/* apply initial theme */
-root.setAttribute("data-theme", state.data.theme || "light");
-themeLabel.textContent = (state.data.theme === "dark") ? "Dark" : "Light";
-
-/* update blocks list (right side) */
-function renderBlocksList(){
-  blocksList.innerHTML = "";
-  state.data.blocks.forEach(b=>{
-    const li = document.createElement("li");
-    li.innerHTML = `<strong>${b.label}:</strong> ${b.months} — <span class="price-tag">${state.data.currency}${b.price}</span>`;
-    blocksList.appendChild(li);
-  });
-}
-renderBlocksList();
-
-/* populate pie slice colors & event listeners */
-function initSlices(){
-  const slices = [
-    {id:"slice-discipline", key:"discipline"},
-    {id:"slice-performance", key:"performance"},
-    {id:"slice-creative", key:"creative"}
-  ];
-  slices.forEach(s=>{
-    const el = document.getElementById(s.id);
-    const part = el.querySelector("path");
-    part.setAttribute("fill", state.data.subjects[s.key].color || getComputedStyle(document.documentElement).getPropertyValue('--accent1'));
-    el.addEventListener("click", ()=>selectSubject(s.key));
-    el.addEventListener("keydown", (ev)=>{ if(ev.key === 'Enter' || ev.key === ' ') selectSubject(s.key); });
-    el.setAttribute("tabindex","0");
-  });
-}
-initSlices();
-
-/* selects subject and renders booking options */
-function selectSubject(key){
-  state.selectedSubject = key;
-  state.selectedBlocks = 0;
-  selectedLabel.textContent = state.data.subjects[key].name;
-  summaryText.textContent = state.data.subjects[key].desc;
-  // highlight slice
-  document.querySelectorAll(".slice").forEach(s=> s.style.transform = "");
-  document.querySelector(`#slice-${key}`).style.transform = "scale(1.04)";
-  // show progression animation
-  document.getElementById("line1").classList.add("on");
-  document.getElementById("line2").classList.add("on");
-  // render options
-  renderOptions();
-  // small sound
-  subtleClick();
-}
-
-/* render block booking options */
-function renderOptions(){
-  optionsPanel.innerHTML = "";
-  if(!state.selectedSubject){
-    optionsPanel.innerHTML = `<div class="tiny muted-note">Select a subject slice to see booking options.</div>`;
-    return;
-  }
-  // create 3 block buttons
-  state.data.blocks.forEach((b, idx)=>{
-    const btn = document.createElement("button");
-    btn.className = "block-btn pulse focus-outline";
-    btn.innerHTML = `<div style="font-size:13px">${b.label}</div><div class="tiny">${b.months}</div><div class="price-tag">${state.data.currency}${b.price}</div>`;
-    btn.addEventListener("click", ()=> {
-      state.selectedBlocks = idx+1;
-      document.querySelectorAll(".block-btn").forEach(x=>x.classList.remove("active"));
-      btn.classList.add("active");
-      // calculate total = price * selectedBlocks
-      const total = state.data.blocks.slice(0, state.selectedBlocks).reduce((s,bb)=> s + bb.price, 0);
-      totalPrice.textContent = state.data.currency + total;
-      subtlePop();
-      // update small summary
-      summaryText.textContent = `${state.data.subjects[state.selectedSubject].desc} — Booking: ${state.selectedBlocks} block(s), Total: ${state.data.currency}${total}`;
-    });
-    optionsPanel.appendChild(btn);
-  });
-  // quick reset / info
-  const reset = document.createElement("div");
-  reset.style.width="100%";
-  reset.innerHTML = `<div class="muted-note tiny">Select 1, 2 or 3 blocks. Prices shown are per block. Changes editable via admin (🔒).</div>`;
-  optionsPanel.appendChild(reset);
-  totalPrice.textContent = state.data.currency + "0";
-}
-
-/* subtle audio feedback using WebAudio */
-let audioCtx;
-function ensureAudio(){
-  if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-}
-function subtleClick(){
-  try{
-    ensureAudio();
-    const o = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    o.type = 'sine'; o.frequency.setValueAtTime(440, audioCtx.currentTime);
-    g.gain.setValueAtTime(0.0001, audioCtx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.02, audioCtx.currentTime + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.12);
-    o.connect(g); g.connect(audioCtx.destination);
-    o.start(); o.stop(audioCtx.currentTime + 0.14);
-  }catch(e){}
-}
-function subtlePop(){
-  try{
-    ensureAudio();
-    const o = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    o.type = 'triangle'; o.frequency.setValueAtTime(520, audioCtx.currentTime);
-    g.gain.setValueAtTime(0.0001, audioCtx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.04, audioCtx.currentTime + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.14);
-    o.connect(g); g.connect(audioCtx.destination);
-    o.start(); o.stop(audioCtx.currentTime + 0.16);
-  }catch(e){}
-}
-
-/* Apply & contact actions */
-applyBtn.addEventListener("click", ()=>{
-  subtleClick();
-  window.open(state.data.applyUrl || "#", "_blank");
-});
-contactBtn.addEventListener("click", ()=>{
-  subtleClick();
-  window.open(state.data.contactUrl || "mailto:course@example.com", "_blank");
-});
-
-/* Admin modal & editing */
-devButton.addEventListener("click", openPasswordPrompt);
-
-function openPasswordPrompt(){
-  modalContainer.innerHTML = `
-    <div class="modal-back" id="pwdBack">
-      <div class="modal" role="dialog" aria-modal="true">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <div><strong>Admin Access</strong><div class="tiny">Enter password to edit widget parameters</div></div>
-          <button class="btn" id="closePwd">Close</button>
-        </div>
-        <div style="margin-top:12px;">
-          <div class="form-row"><label>Password</label><input id="pwdInput" type="password" placeholder="Enter admin password" /></div>
-          <div style="text-align:right"><button class="btn primary" id="pwdSubmit">Unlock</button></div>
-        </div>
-      </div>
-    </div>
-  `;
-  modalContainer.style.display = "block";
-  document.getElementById("closePwd").addEventListener("click", ()=>{ modalContainer.style.display="none"; modalContainer.innerHTML=""; });
-  document.getElementById("pwdSubmit").addEventListener("click", ()=> {
-    const val = document.getElementById("pwdInput").value;
-    if(val === state.data.adminPass){
-      modalContainer.innerHTML = "";
-      modalContainer.style.display="none";
-      openAdminPanel();
-    } else {
-      alert("Incorrect password.");
-    }
-  });
-}
-
-function openAdminPanel(){
-  // build admin UI (editable fields)
-  modalContainer.innerHTML = `
-    <div class="modal-back" id="adminBack">
-      <div class="modal" role="dialog" aria-modal="true">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <div><strong>Widget Admin Panel</strong><div class="tiny">Change names, months, prices, colors, links, theme</div></div>
-          <div><button class="btn" id="admClose">Close</button></div>
-        </div>
-        <div style="margin-top:12px; max-height:60vh; overflow:auto;">
-          <div style="border-top:1px solid var(--muted); padding-top:10px;">
-            <div class="form-row"><label>Theme</label>
-              <select id="adminTheme">
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
-              </select>
-            </div>
-            <div class="form-row"><label>Currency</label><input id="adminCurrency" value="${state.data.currency}" /></div>
-            <div class="form-row"><label>Apply URL</label><input id="adminApply" value="${state.data.applyUrl}" /></div>
-            <div class="form-row"><label>Contact URL</label><input id="adminContact" value="${state.data.contactUrl}" /></div>
-          </div>
-
-          <div style="border-top:1px solid var(--muted); padding-top:10px; margin-top:10px;">
-            <div style="font-weight:800; margin-bottom:8px">Subject labels & colors</div>
-            ${Object.keys(state.data.subjects).map(k=> {
-              const s = state.data.subjects[k];
-              return `<div class="form-row"><label>${s.name}</label>
-                        <input data-sub="${k}" class="subLabel" value="${s.name}" />
-                        <input data-subcol="${k}" class="subColor" value="${s.color}" style="width:100px; margin-left:8px;" />
-                      </div>`;
-            }).join('')}
-          </div>
-
-          <div style="border-top:1px solid var(--muted); padding-top:10px; margin-top:10px;">
-            <div style="font-weight:800; margin-bottom:8px">Blocks & prices</div>
-            ${state.data.blocks.map((b,idx)=> `
-              <div class="form-row">
-                <label>Block ${b.id}</label>
-                <input data-blockidx="${idx}" class="blockLabel" value="${b.label}" />
-                <input data-blockmonths="${idx}" class="blockMonths" value="${b.months}" style="width:140px; margin-left:8px;" />
-                <input data-blockprice="${idx}" class="blockPrice" value="${b.price}" style="width:100px; margin-left:8px;" />
-              </div>
-            `).join('')}
-          </div>
-
-          <div style="border-top:1px solid var(--muted); padding-top:10px; margin-top:10px;">
-            <div class="form-row"><label>Admin password</label><input id="adminPass" value="${state.data.adminPass}" /></div>
-            <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:10px;">
-              <button class="btn" id="resetDefaults">Reset to defaults</button>
-              <button class="btn primary" id="saveAdmin">Save changes</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
-  modalContainer.style.display = "block";
-  document.getElementById("admClose").addEventListener("click", ()=>{ modalContainer.style.display="none"; modalContainer.innerHTML=""; });
-  document.getElementById("resetDefaults").addEventListener("click", ()=>{ if(confirm("Reset to defaults?")) { localStorage.removeItem("circusDiplomaData"); state.data = loadData(); applyAllSettings(); modalContainer.style.display="none"; modalContainer.innerHTML=""; }});
-  document.getElementById("saveAdmin").addEventListener("click", saveAdminChanges);
-  // set theme value
-  document.getElementById("adminTheme").value = state.data.theme || "light";
-}
-
-function saveAdminChanges(){
-  // basic inputs
-  const theme = document.getElementById("adminTheme").value;
-  const currency = document.getElementById("adminCurrency").value;
-  const applyUrl = document.getElementById("adminApply").value;
-  const contactUrl = document.getElementById("adminContact").value;
-  state.data.theme = theme;
-  state.data.currency = currency || "£";
-  state.data.applyUrl = applyUrl || "#";
-  state.data.contactUrl = contactUrl || "mailto:course@example.com";
-
-  // subjects
-  document.querySelectorAll(".subLabel").forEach(inp=>{
-    const key = inp.getAttribute("data-sub");
-    state.data.subjects[key].name = inp.value;
-  });
-  document.querySelectorAll(".subColor").forEach(inp=>{
-    const key = inp.getAttribute("data-subcol");
-    state.data.subjects[key].color = inp.value;
-  });
-
-  // blocks
-  document.querySelectorAll(".blockLabel").forEach(inp=>{
-    const idx = parseInt(inp.getAttribute("data-blockidx"),10);
-    state.data.blocks[idx].label = inp.value;
-  });
-  document.querySelectorAll(".blockMonths").forEach(inp=>{
-    const idx = parseInt(inp.getAttribute("data-blockmonths"),10);
-    state.data.blocks[idx].months = inp.value;
-  });
-  document.querySelectorAll(".blockPrice").forEach(inp=>{
-    const idx = parseInt(inp.getAttribute("data-blockprice"),10);
-    state.data.blocks[idx].price = Number(inp.value) || 0;
-  });
-
-  // admin pass
-  const newPass = document.getElementById("adminPass").value.trim();
-  if(newPass) state.data.adminPass = newPass;
-
-  saveData(state.data);
-  applyAllSettings();
-  // close
-  modalContainer.style.display = "none";
-  modalContainer.innerHTML = "";
-}
-
-/* apply settings to UI */
+/* initial UI apply */
 function applyAllSettings(){
   // theme
   root.setAttribute("data-theme", state.data.theme || "light");
   themeLabel.textContent = (state.data.theme === "dark") ? "Dark" : "Light";
-  // labels for months quick display
+  // months label (concise)
   monthsLabel.textContent = state.data.blocks.map(b=>b.months).join(" • ");
-  // update block list summary
-  renderBlocksList();
-  // update slices color and labels
-  Object.keys(state.data.subjects).forEach(k=>{
-    const s = state.data.subjects[k];
-    const g = document.querySelector(`#slice-${k}`);
-    if(!g) return;
-    const path = g.querySelector("path");
-    path.setAttribute("fill", s.color);
-    const txt = g.querySelector(".label");
-    if(txt) txt.textContent = s.name;
-  });
-  // update apply / contact URLs
-  applyBtn.onclick = ()=>{ subtleClick(); window.open(state.data.applyUrl || "#", "_blank"); };
-  contactBtn.onclick = ()=>{ subtleClick(); window.open(state.data.contactUrl || "mailto:course@example.com", "_blank"); };
-  // re-render options if selected
-  renderOptions();
-  // update small labels
-  monthsLabel.textContent = state.data.blocks.map(b=>b.months).join(" • ");
-  // update accent CSS vars (optional)
-  document.documentElement.style.setProperty('--accent1', state.data.subjects.discipline.color);
-  document.documentElement.style.setProperty('--accent2', state.data.subjects.performance.color);
-  document.documentElement.style.setProperty('--accent3', state.data.subjects.creative.color);
+  // update block list prices on right panel
+  document.getElementById("b1").innerHTML = `Block 1: ${state.data.blocks[0].months} — <span class="price-tag">${state.data.currency}${state.data.blocks[0].price}</span>`;
+  document.getElementById("b2").innerHTML = `Block 2: ${state.data.blocks[1].months} — <span class="price-tag">${state.data.currency}${state.data.blocks[1].price}</span>`;
+  document.getElementById("b3").innerHTML = `Block 3: ${state.data.blocks[2].months} — <span class="price-tag">${state.data.currency}${state.data.blocks[2].price}</span>`;
+  b1p.textContent = `${state.data.currency}${state.data.blocks[0].price}`;
+  b2p.textContent = `${state.data.currency}${state.data.blocks[1].price}`;
+  b3p.textContent = `${state.data.currency}${state.data.blocks[2].price}`;
+  // lowest single block price
+  const pmin = Math.min(...state.data.blocks.map(b=>b.price));
+  lowestBlockPriceEl.textContent = `${state.data.currency}${pmin}`;
+  // slice labels & colours
+  document.getElementById("t-discipline").textContent = state.data.subjects.discipline.name;
+  document.getElementById("t-performance").textContent = state.data.subjects.performance.name;
+  document.getElementById("t-creative").textContent = state.data.subjects.creative.name;
+  // update slice fills (if currently active)
+  updateSliceFills();
+  // re-render block groups positions
+  renderBlockGroups();
+  // persist local
+  saveLocal(state.data);
 }
 
-/* initial apply */
+/* --------------------------------------
+   Geometry: perfect circle arcs for equal thirds
+   -------------------------------------- */
+function polarToCartesian(cx, cy, r, angleDeg){
+  const a = (angleDeg-90) * Math.PI/180.0;
+  return { x: cx + (r * Math.cos(a)), y: cy + (r * Math.sin(a)) };
+}
+function describeArc(cx, cy, r, startAngle, endAngle){
+  const start = polarToCartesian(cx, cy, r, endAngle);
+  const end = polarToCartesian(cx, cy, r, startAngle);
+  const largeArc = endAngle - startAngle <= 180 ? "0" : "1";
+  const d = [
+    "M", cx, cy,
+    "L", start.x, start.y,
+    "A", r, r, 0, largeArc, 0, end.x, end.y,
+    "Z"
+  ].join(" ");
+  return d;
+}
+
+/* set exact arcs on load */
+function setupSlices(){
+  // equal thirds angles: choose top-center as middle of first slice: center angles at -90 (top), 30 (top-right), 150 (top-left)
+  // define arcs by start/end angles:
+  const arcs = {
+    discipline: { start:150, end:270 }, // left-top sector
+    performance:{ start:270, end:30 }, // top-right sector (wraps)
+    creative:{ start:30, end:150 } // bottom sector
+  };
+  // workaround: ensure positive angles and compute correct arc; for performance that wraps beyond 360 handle in describeArc by end>start
+  // But our describeArc expects startAngle < endAngle for normal; so adjust where needed:
+  // We'll compute for each as continuous increasing angles
+  const normalized = {
+    discipline: { start:150, end:270 },
+    performance: { start:270, end:390 }, // 390 equals 30 + 360
+    creative: { start:30, end:150 }
+  };
+  // radius set to 200 (viewBox used -250..250)
+  const r=200, cx=0, cy=0;
+  document.getElementById("p-discipline").setAttribute("d", describeArc(cx,cy,r, normalized.discipline.start, normalized.discipline.end));
+  document.getElementById("p-performance").setAttribute("d", describeArc(cx,cy,r, normalized.performance.start, normalized.performance.end));
+  document.getElementById("p-creative").setAttribute("d", describeArc(cx,cy,r, normalized.creative.start, normalized.creative.end));
+}
+setupSlices();
+
+/* --------------------------------------
+   Slice interaction: toggle slice, show/hide block group
+   -------------------------------------- */
+function updateSliceFills(){
+  // for each slice, set fill to color if active else sliceGrey
+  const sKeys = ["discipline","performance","creative"];
+  sKeys.forEach(k=>{
+    const path = document.getElementById(`p-${k}`);
+    const color = (state.data.subjects[k] && state.data.subjects[k].color) ? state.data.subjects[k].color : (k === "discipline" ? getComputedStyle(document.documentElement).getPropertyValue('--accent1') : (k === "performance" ? getComputedStyle(document.documentElement).getPropertyValue('--accent2') : getComputedStyle(document.documentElement).getPropertyValue('--accent3')));
+    path.setAttribute("fill", state.slices[k] ? color : getComputedStyle(document.documentElement).getPropertyValue('--sliceGrey').trim() );
+    // slight scale when active
+    const g = document.getElementById(`g-${k}`);
+    g.style.transform = state.slices[k] ? "scale(1.02)" : "scale(1)";
+  });
+}
+
+/* compute screen position of a polar angle within SVG element */
+function svgPointForAngle(angleDeg, radiusFactor=1.2){
+  // get bounding box of svg DOM rect to compute pixel coordinates
+  const rect = svg.getBoundingClientRect();
+  // viewBox coordinate mapping: viewBox -250..250 maps onto rect width
+  const vb = { minX:-250, minY:-250, width:500, height:500 };
+  // compute point in viewBox coords
+  const cx = 0, cy = 0, r = 200 * radiusFactor;
+  const p = polarToCartesian(cx, cy, r, angleDeg);
+  // map viewBox x/y to client pixels:
+  const px = rect.left + ( (p.x - vb.minX) / vb.width ) * rect.width;
+  const py = rect.top + ( (p.y - vb.minY) / vb.height ) * rect.height;
+  return { px, py, relX: ( (p.x - vb.minX) / vb.width ) * rect.width, relY: ( (p.y - vb.minY) / vb.height ) * rect.height };
+}
+
+/* create / update block group elements */
+function renderBlockGroups(){
+  // clear container
+  blockGroupsContainer.innerHTML = "";
+  connectorsG.innerHTML = "";
+  const svgRect = svg.getBoundingClientRect();
+  // define angle for each slice's connector origin (use center of each slice)
+  const centers = {
+    discipline: 210, // mid-angle between 150 and 270
+    performance: 330, // mid 270-390 -> 330
+    creative: 90 // mid 30-150 -> 90
+  };
+  // where to position each group's block container (in px). We'll offset from connector end.
+  Object.keys(centers).forEach(key=>{
+    if(!state.slices[key]) return; // only render groups for active slices
+    const angle = centers[key];
+    const { px, py, relX, relY } = svgPointForAngle(angle, 1.05); // connector origin slightly outside circle
+    // create connector line from slice edge (svg point) to block group (in DOM coordinates)
+    // compute a point slightly further out to form dot position
+    const entry = svgPointForAngle(angle, 1.02);
+    // draw line in SVG coordinate space connecting center of slice to computed point
+    const svgRect = svg.getBoundingClientRect();
+    // We need to transform screen coordinates to svg user coordinates for line positions:
+    // Simple method: compute normalized ratio and convert back to viewBox coords:
+    const vb = { minX:-250, minY:-250, width:500, height:500 };
+    const lineStart = polarToCartesian(0,0,200, angle); // viewBox coord on circle edge
+    // line end in viewBox coords convert using screen point to viewBox mapping
+    const endViewX = ((relX / svgRect.width) * vb.width) + vb.minX;
+    const endViewY = ((relY / svgRect.height) * vb.height) + vb.minY;
+    // create SVG line (path)
+    const path = document.createElementNS("http://www.w3.org/2000/svg","path");
+    path.setAttribute("class","conn-line");
+    const d = `M ${lineStart.x} ${lineStart.y} L ${endViewX} ${endViewY}`;
+    path.setAttribute("d", d);
+    connectorsG.appendChild(path);
+    // dot
+    const dot = document.createElementNS("http://www.w3.org/2000/svg","circle");
+    dot.setAttribute("class","conn-dot");
+    dot.setAttribute("cx", endViewX);
+    dot.setAttribute("cy", endViewY);
+    dot.setAttribute("r", 3.6);
+    connectorsG.appendChild(dot);
+
+    // create HTML block-group container positioned near px,py (screen coords)
+    const container = document.createElement("div");
+    container.className = "block-group";
+    container.style.pointerEvents = "auto";
+    // position absolute within parent (blockGroupsContainer which covers entire widget). We'll position using px/py relative to container's offset
+    const parentRect = blockGroupsContainer.getBoundingClientRect();
+    const offsetLeft = px - parentRect.left;
+    const offsetTop = py - parentRect.top;
+    // adjust offsets to place group nicely around slice (top-left, top-right, bottom)
+    let offsetX = -90, offsetY = -20;
+    if(key === "discipline"){ offsetX = -220; offsetY = -120; } // top-left
+    if(key === "performance"){ offsetX = 40; offsetY = -120; } // top-right
+    if(key === "creative"){ offsetX = -60; offsetY = 40; } // below
+    container.style.left = Math.max(6, offsetLeft + offsetX) + "px";
+    container.style.top = Math.max(6, offsetTop + offsetY) + "px";
+    // build inner block wrap
+    const wrap = document.createElement("div");
+    wrap.className = "block-wrap";
+    // add three blocks
+    for(let i=1;i<=3;i++){
+      const block = document.createElement("div");
+      block.className = "block-row "+(state.blocksOn[key][i] ? "on":"");
+      block.setAttribute("data-sub", key);
+      block.setAttribute("data-idx", i);
+      const labelText = `${state.data.subjects[key].short}${i}`;
+      const leftDiv = document.createElement("div"); leftDiv.className="block-left";
+      const title = document.createElement("div"); title.className="block-title"; title.innerText = labelText;
+      const months = document.createElement("div"); months.className="block-months"; months.innerText = state.data.blocks[i-1].months;
+      leftDiv.appendChild(title); leftDiv.appendChild(months);
+      const price = document.createElement("div"); price.className="block-price"; price.innerText = `${state.data.currency}${state.data.blocks[i-1].price}`;
+      block.appendChild(leftDiv); block.appendChild(price);
+      // click toggles block ON/OFF
+      block.addEventListener("click", ()=>{
+        const idx = Number(block.getAttribute("data-idx"));
+        const sub = block.getAttribute("data-sub");
+        // toggle state
+        state.blocksOn[sub][idx] = !state.blocksOn[sub][idx];
+        // apply class
+        if(state.blocksOn[sub][idx]) block.classList.add("on"); else block.classList.remove("on");
+        // update total
+        updateTotal();
+      });
+      wrap.appendChild(block);
+    }
+    container.appendChild(wrap);
+    blockGroupsContainer.appendChild(container);
+  });
+}
+
+/* update total based only on blocks currently ON */
+function updateTotal(){
+  let total = 0;
+  const subjectKeys = Object.keys(state.blocksOn);
+  subjectKeys.forEach(sk=>{
+    for(let i=1;i<=3;i++){
+      if(state.blocksOn[sk][i]) total += Number(state.data.blocks[i-1].price || 0);
+    }
+  });
+  totalPriceEl.textContent = `${state.data.currency}${total}`;
+  // update selected label with active subject names or None
+  const activeSubjects = Object.keys(state.slices).filter(k=>state.slices[k]).map(k=>state.data.subjects[k].name);
+  selectedLabel.textContent = activeSubjects.length ? activeSubjects.join(", ") : "None";
+}
+
+/* slice click toggling behavior */
+function installSliceListeners(){
+  const keys = ["discipline","performance","creative"];
+  keys.forEach(k=>{
+    const g = document.getElementById(`g-${k}`);
+    g.addEventListener("click", (ev)=>{
+      ev.preventDefault();
+      // toggle slice
+      state.slices[k] = !state.slices[k];
+      // if turning OFF, ensure its blocks are toggled off
+      if(!state.slices[k]){
+        for(let i=1;i<=3;i++) state.blocksOn[k][i]=false;
+      }
+      updateSliceFills();
+      renderBlockGroups();
+      updateTotal();
+      subtleClick();
+    });
+    // keyboard accessibility
+    g.addEventListener("keydown", (ev)=>{
+      if(ev.key === "Enter" || ev.key === " ") {
+        g.click();
+      }
+    });
+  });
+}
+installSliceListeners();
+
+/* ---------------------------
+   Subtle audio
+   --------------------------- */
+let audioCtx;
+function ensureAudio(){ if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+function subtleClick(){
+  try{
+    ensureAudio();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type='sine'; o.frequency.setValueAtTime(480, audioCtx.currentTime);
+    g.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.02, audioCtx.currentTime+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime+0.12);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime+0.14);
+  }catch(e){}
+}
+
+/* apply button and contact link */
+applyBtn.addEventListener("click", ()=>{ subtleClick(); window.open(state.data.applyUrl || "#", "_blank"); });
+contactBtn.addEventListener("click", ()=>{ subtleClick(); window.open(state.data.contactUrl || "mailto:course@example.com", "_blank"); });
+
+/* initial render */
 applyAllSettings();
+updateTotal();
 
-/* small accessibility keys */
-document.addEventListener("keydown", (e)=>{
-  if(e.key === "Escape") {
-    modalContainer.style.display="none";
-    modalContainer.innerHTML="";
+/* responsive update when resizing (recompute block positions & connectors) */
+let resizeTimer;
+window.addEventListener("resize", ()=> { clearTimeout(resizeTimer); resizeTimer = setTimeout(()=> { renderBlockGroups(); }, 160); });
+
+/* --------------------------------------
+   Admin panel + Supabase wiring
+   -------------------------------------- */
+devBtn.addEventListener("click", ()=>openPasswordPrompt());
+
+function openPasswordPrompt(){
+  modalRoot.innerHTML = `
+  <div class="modal-back" id="pwdBack">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div><strong>Admin Access</strong><div class="tiny">Enter passcode to edit settings</div></div>
+        <button class="btn" id="closePwd">Close</button>
+      </div>
+      <div style="margin-top:12px;">
+        <div class="form-row"><label>Passcode</label><input id="pwdInput" type="password" placeholder="Enter admin passcode" /></div>
+        <div style="text-align:right;"><button class="btn primary" id="pwdSubmit">Unlock</button></div>
+      </div>
+    </div>
+  </div>`;
+  modalRoot.style.display = "block";
+  document.getElementById("closePwd").addEventListener("click", ()=>{ modalRoot.style.display="none"; modalRoot.innerHTML=""; });
+  document.getElementById("pwdSubmit").addEventListener("click", ()=> {
+    const val = document.getElementById("pwdInput").value;
+    if(val === state.data.adminPass){
+      modalRoot.innerHTML = "";
+      modalRoot.style.display = "none";
+      openAdminPanel();
+    } else {
+      alert("Incorrect passcode.");
+    }
+  });
+}
+
+/* admin panel UI */
+function openAdminPanel(){
+  // populate form with current state.data
+  modalRoot.innerHTML = `
+  <div class="modal-back" id="adminBack">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div><strong>Widget Admin Panel</strong><div class="tiny">Edit labels, months, prices, colours, theme & Supabase settings</div></div>
+        <button class="btn" id="admClose">Close</button>
+      </div>
+
+      <div style="margin-top:12px;">
+        <div class="form-row"><label>Theme</label>
+          <select id="adminTheme"><option value="light">Light</option><option value="dark">Dark</option></select>
+        </div>
+
+        <div class="form-row"><label>Currency</label><input id="adminCurrency" value="${state.data.currency}"></div>
+        <div class="form-row"><label>Apply URL</label><input id="adminApply" value="${state.data.applyUrl}"></div>
+        <div class="form-row"><label>Contact URL</label><input id="adminContact" value="${state.data.contactUrl}"></div>
+
+        <hr style="border:none;border-top:1px solid var(--muted); margin:14px 0;">
+
+        <div style="font-weight:800; margin-bottom:8px">Subjects (names, short, colours)</div>
+        <div class="form-row"><label>Discipline</label><input id="sub_d_name" value="${state.data.subjects.discipline.name}"><input id="sub_d_short" value="${state.data.subjects.discipline.short}" style="width:64px; margin-left:8px;"><input id="sub_d_color" value="${state.data.subjects.discipline.color}" style="width:120px; margin-left:8px;"></div>
+        <div class="form-row"><label>Performance</label><input id="sub_p_name" value="${state.data.subjects.performance.name}"><input id="sub_p_short" value="${state.data.subjects.performance.short}" style="width:64px; margin-left:8px;"><input id="sub_p_color" value="${state.data.subjects.performance.color}" style="width:120px; margin-left:8px;"></div>
+        <div class="form-row"><label>Creative</label><input id="sub_c_name" value="${state.data.subjects.creative.name}"><input id="sub_c_short" value="${state.data.subjects.creative.short}" style="width:64px; margin-left:8px;"><input id="sub_c_color" value="${state.data.subjects.creative.color}" style="width:120px; margin-left:8px;"></div>
+
+        <hr style="border:none;border-top:1px solid var(--muted); margin:14px 0;">
+
+        <div style="font-weight:800; margin-bottom:8px">Blocks & prices</div>
+        <div class="form-row"><label>Block 1</label><input id="block1_label" value="${state.data.blocks[0].label}"><input id="block1_months" value="${state.data.blocks[0].months}" style="width:140px; margin-left:8px;"><input id="block1_price" value="${state.data.blocks[0].price}" style="width:100px; margin-left:8px;"></div>
+        <div class="form-row"><label>Block 2</label><input id="block2_label" value="${state.data.blocks[1].label}"><input id="block2_months" value="${state.data.blocks[1].months}" style="width:140px; margin-left:8px;"><input id="block2_price" value="${state.data.blocks[1].price}" style="width:100px; margin-left:8px;"></div>
+        <div class="form-row"><label>Block 3</label><input id="block3_label" value="${state.data.blocks[2].label}"><input id="block3_months" value="${state.data.blocks[2].months}" style="width:140px; margin-left:8px;"><input id="block3_price" value="${state.data.blocks[2].price}" style="width:100px; margin-left:8px;"></div>
+
+        <hr style="border:none;border-top:1px solid var(--muted); margin:14px 0;">
+
+        <div style="font-weight:800; margin-bottom:8px">Supabase (for global settings)</div>
+        <div class="tiny" style="margin-bottom:8px">Set up a free Supabase project (instructions below). Paste your Project URL and anon/public key here to enable global saves.</div>
+        <div class="form-row"><label>Supabase URL</label><input id="supabase_url" value="${state.data.supabase.url}"></div>
+        <div class="form-row"><label>Supabase anon key</label><input id="supabase_key" value="${state.data.supabase.anonKey}"></div>
+        <div class="form-row"><label>Table name</label><input id="supabase_table" value="${state.data.supabase.table}"></div>
+        <div class="form-row"><label>Row id</label><input id="supabase_rowid" value="${state.data.supabase.rowId}"></div>
+
+        <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+          <button class="btn" id="resetDefaults">Reset defaults</button>
+          <button class="btn" id="saveAdmin">Save (local)</button>
+          <button class="btn primary" id="saveAdminRemote">Save to Supabase (global)</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+  `;
+  modalRoot.style.display = "block";
+
+  document.getElementById("admClose").addEventListener("click", ()=>{ modalRoot.style.display="none"; modalRoot.innerHTML = ""; });
+  document.getElementById("resetDefaults").addEventListener("click", ()=> {
+    if(confirm("Reset to defaults? This will overwrite local settings.")) {
+      state.data = JSON.parse(JSON.stringify(DEFAULT));
+      saveLocal(state.data);
+      applyAllSettings();
+      modalRoot.style.display = "none"; modalRoot.innerHTML = "";
+    }
+  });
+
+  document.getElementById("saveAdmin").addEventListener("click", ()=> {
+    // read fields and update state.data, save local
+    readAdminFormIntoState();
+    saveLocal(state.data);
+    initSupabaseIfConfigured(); // refresh client if keys changed
+    applyAllSettings();
+    modalRoot.style.display = "none";
+    modalRoot.innerHTML = "";
+    alert("Saved locally.");
+  });
+
+  document.getElementById("saveAdminRemote").addEventListener("click", async ()=> {
+    readAdminFormIntoState();
+    try {
+      await initSupabaseIfConfigured();
+      if(!state.supabaseClient) { alert("Supabase credentials missing or invalid."); return; }
+      // attempt to upsert row
+      await saveToSupabase();
+      // also save locally
+      saveLocal(state.data);
+      applyAllSettings();
+      modalRoot.style.display = "none"; modalRoot.innerHTML = "";
+      alert("Saved to Supabase successfully. Settings are now global.");
+    } catch(err){
+      console.error(err);
+      alert("Error saving to Supabase: " + (err.message || JSON.stringify(err)));
+    }
+  });
+}
+
+/* helper to extract admin fields */
+function readAdminFormIntoState(){
+  state.data.theme = document.getElementById("adminTheme").value;
+  state.data.currency = document.getElementById("adminCurrency").value || "£";
+  state.data.applyUrl = document.getElementById("adminApply").value || "#";
+  state.data.contactUrl = document.getElementById("adminContact").value || "mailto:course@example.com";
+  // subjects
+  state.data.subjects.discipline.name = document.getElementById("sub_d_name").value || state.data.subjects.discipline.name;
+  state.data.subjects.discipline.short = document.getElementById("sub_d_short").value || state.data.subjects.discipline.short;
+  state.data.subjects.discipline.color = document.getElementById("sub_d_color").value || state.data.subjects.discipline.color;
+  state.data.subjects.performance.name = document.getElementById("sub_p_name").value || state.data.subjects.performance.name;
+  state.data.subjects.performance.short = document.getElementById("sub_p_short").value || state.data.subjects.performance.short;
+  state.data.subjects.performance.color = document.getElementById("sub_p_color").value || state.data.subjects.performance.color;
+  state.data.subjects.creative.name = document.getElementById("sub_c_name").value || state.data.subjects.creative.name;
+  state.data.subjects.creative.short = document.getElementById("sub_c_short").value || state.data.subjects.creative.short;
+  state.data.subjects.creative.color = document.getElementById("sub_c_color").value || state.data.subjects.creative.color;
+  // blocks
+  state.data.blocks[0].label = document.getElementById("block1_label").value || state.data.blocks[0].label;
+  state.data.blocks[0].months = document.getElementById("block1_months").value || state.data.blocks[0].months;
+  state.data.blocks[0].price = Number(document.getElementById("block1_price").value) || state.data.blocks[0].price;
+  state.data.blocks[1].label = document.getElementById("block2_label").value || state.data.blocks[1].label;
+  state.data.blocks[1].months = document.getElementById("block2_months").value || state.data.blocks[1].months;
+  state.data.blocks[1].price = Number(document.getElementById("block2_price").value) || state.data.blocks[1].price;
+  state.data.blocks[2].label = document.getElementById("block3_label").value || state.data.blocks[2].label;
+  state.data.blocks[2].months = document.getElementById("block3_months").value || state.data.blocks[2].months;
+  state.data.blocks[2].price = Number(document.getElementById("block3_price").value) || state.data.blocks[2].price;
+  // supabase
+  state.data.supabase.url = document.getElementById("supabase_url").value.trim();
+  state.data.supabase.anonKey = document.getElementById("supabase_key").value.trim();
+  state.data.supabase.table = document.getElementById("supabase_table").value.trim() || "widget_settings";
+  state.data.supabase.rowId = document.getElementById("supabase_rowid").value.trim() || "main";
+}
+
+/* Option: on load, if Supabase keys exist locally, auto-load remote settings */
+(async function tryLoadRemoteOnStart(){
+  await initSupabaseIfConfigured();
+  if(state.supabaseClient){
+    const ok = await loadFromSupabase();
+    if(ok) console.log("Loaded settings from Supabase.");
+  }
+})();
+
+/* accessibility: keyboard hints */
+document.addEventListener("keydown",(e)=>{
+  if(e.key === "Escape"){
+    modalRoot.style.display = "none"; modalRoot.innerHTML = "";
   }
 });
 
-/* Ensure focus outlines for keyboard users */
-document.querySelectorAll(".slice, .block-btn, .btn, .dev-btn").forEach(el=>{
-  el.addEventListener("focus", ()=> el.classList.add("focus-outline"));
-  el.addEventListener("blur", ()=> el.classList.remove("focus-outline"));
-});
-
-/* Mobile friendly: make svg scale */
-window.addEventListener("resize", ()=> {
-  // keep it responsive; no action required but placeholder to add if necessary
-});
-
-/* initial render state */
-renderOptions();
-
-/* small niceties: clicking outside admin closes */
-document.addEventListener("click", (ev)=>{
-  if(ev.target && ev.target.matches && ev.target.matches('.modal-back')) {
-    ev.target.style.display = 'none';
-    modalContainer.innerHTML = '';
-  }
-});
 </script>
 </body>
 </html>
