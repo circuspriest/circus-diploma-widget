@@ -1,0 +1,590 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Circus Diploma Widget</title>
+<style>
+  :root{
+    --bg:#ffffff; --card:#f7f7f7; --text:#0a0a0a; --edge:#000;
+    --accent1:#9fd8d6; --accent2:#f1d08a; --accent3:#f3c1d1;
+    --muted:rgba(0,0,0,0.06);
+    --glass: rgba(255,255,255,0.6);
+    --shadow: 0 6px 20px rgba(0,0,0,0.08);
+    font-family: "Consolas", ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  }
+  [data-theme="dark"]{
+    --bg:#0b0b0b; --card:#0f0f0f; --text:#f6f6f6; --edge:#fff;
+    --muted: rgba(255,255,255,0.03);
+    --glass: rgba(0,0,0,0.45);
+  }
+
+  html,body{height:100%; margin:0; background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1100px; margin:18px auto; padding:18px; box-sizing:border-box;}
+  .widget{display:flex; gap:28px; align-items:flex-start; justify-content:space-between; width:100%;}
+  .left{flex:0 1 620px; min-width:300px;}
+  .right{flex:1 1 360px; min-width:260px;}
+  .card{background:var(--card); border-radius:12px; padding:18px; box-shadow:var(--shadow); border:2px solid var(--muted); position:relative;}
+  .title{font-size:20px; margin:0 0 10px 0; font-weight:700; letter-spacing:0.6px;}
+  .subtitle{font-size:13px; opacity:0.8; margin-bottom:12px;}
+  /* Circle Map */
+  .circle-wrap{display:flex; align-items:center; justify-content:center; position:relative; height:420px;}
+  .pie-svg{width:100%; max-width:560px; height:auto; display:block;}
+  .slice{cursor:pointer; transition:transform .28s cubic-bezier(.2,.9,.2,1), filter .25s; transform-origin:center center;}
+  .slice:hover{transform:scale(1.03); filter:brightness(1.02);}
+  .center-circle{cursor:default; fill:var(--glass); stroke:var(--edge); stroke-width:1.8}
+  .label{font-size:12px; text-anchor:middle; fill:var(--text); pointer-events:none; font-weight:700;}
+  .iconsvg{width:20px;height:20px; vertical-align:middle; margin-right:6px;}
+  /* Sub-panel */
+  .panel{margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;}
+  .block-btn{background:transparent; border:1px solid var(--muted); padding:8px 12px; border-radius:8px; cursor:pointer; min-width:120px; text-align:center;}
+  .block-btn.active{border-color:var(--edge); box-shadow:0 6px 14px rgba(0,0,0,0.06); transform:translateY(-2px);}
+  .total{margin-top:16px; font-size:18px; font-weight:800;}
+  .tiny{font-size:12px; opacity:0.85;}
+  .controls-row{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;}
+  .btn{padding:10px 14px; border-radius:10px; cursor:pointer; border:2px solid var(--edge); background:transparent; font-weight:700;}
+  .btn.primary{background:var(--edge); color:var(--bg);}
+  .muted-note{font-size:12px; opacity:0.7; margin-top:8px;}
+  /* Admin button */
+  .dev-btn{position:fixed; right:18px; bottom:18px; z-index:9999; border-radius:14px; padding:10px 12px; border:1px solid var(--muted); background:var(--card); cursor:pointer; box-shadow:var(--shadow);}
+  /* Admin modal */
+  .modal-back{position:fixed; inset:0; background:rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; z-index:10000;}
+  .modal{width:92%; max-width:720px; background:var(--card); border-radius:12px; padding:16px; border:1px solid var(--muted);}
+  .form-row{display:flex; gap:8px; margin-bottom:8px; align-items:center;}
+  .form-row label{min-width:120px; font-size:13px;}
+  .form-row input, .form-row textarea, .form-row select{flex:1; padding:8px 10px; border-radius:8px; border:1px solid var(--muted); background:transparent; color:var(--text);}
+  .small{font-size:12px;}
+  /* mobile */
+  @media (max-width:900px){
+    .widget{flex-direction:column;}
+    .left,.right{min-width:unset;}
+    .circle-wrap{height:360px;}
+  }
+  /* Progression lines */
+  .progress-line{stroke:var(--edge); stroke-width:3; fill:none; stroke-dasharray:1000; stroke-dashoffset:1000; opacity:0.08;}
+  .progress-line.on{animation:dash 1.2s forwards;}
+  @keyframes dash{to{stroke-dashoffset:0; opacity:1}}
+  /* silhouette animation */
+  .sil{opacity:0.95; transform-origin:center; animation:cycle 3.6s linear infinite;}
+  @keyframes cycle{0%{transform:translateY(0)}50%{transform:translateY(-6px)}100%{transform:translateY(0)}}
+  /* hover micro animations */
+  .pulse{transition:transform .2s, box-shadow .2s}
+  .pulse:hover{transform:translateY(-4px)}
+  /* price tag */
+  .price-tag{font-weight:800; font-size:16px;}
+  /* subtle focus */
+  .focus-outline:focus{outline:3px solid rgba(0,0,0,0.06); outline-offset:3px}
+</style>
+</head>
+<body>
+<div class="wrap" id="widgetRoot" data-theme="light">
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:12px;">
+    <div>
+      <h1 class="title">Circus Diploma — Course Map</h1>
+      <div class="subtitle">Three blocks per year • Click a subject slice to book 1–3 blocks</div>
+    </div>
+    <div style="text-align:right;">
+      <div class="tiny">Academic year: <span id="monthsLabel">Sept–June</span></div>
+      <div class="tiny" style="margin-top:8px">Theme: <span id="themeLabel">Light</span></div>
+    </div>
+  </div>
+
+  <div class="widget">
+    <div class="left card">
+      <div class="circle-wrap">
+        <!-- SVG Pie with slices -->
+        <svg class="pie-svg" viewBox="-250 -250 500 500" id="pieSvg" aria-label="Course map">
+          <!-- progress lines behind -->
+          <path class="progress-line" id="line1" d="M -200 0 A 200 200 0 0 1 200 0"></path>
+          <path class="progress-line" id="line2" d="M 0 -200 A 200 200 0 0 1 0 200"></path>
+
+          <!-- Slice 1: Discipline (left) -->
+          <g id="slice-discipline" class="slice" data-key="discipline" transform="">
+            <path d="M 0 0 L -200 0 A 200 200 0 0 1 0 -200 z" fill="var(--accent1)" stroke="var(--edge)" stroke-width="1.2"></path>
+            <text x="-115" y="-70" class="label">Discipline</text>
+            <g transform="translate(-120,-30)">
+              <svg class="iconsvg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="none" fill="#000" opacity="0.08"/></svg>
+            </g>
+          </g>
+
+          <!-- Slice 2: Performance (top-right) -->
+          <g id="slice-performance" class="slice" data-key="performance">
+            <path d="M0 0 L0 -200 A 200 200 0 0 1 173 -100 z" fill="var(--accent2)" stroke="var(--edge)" stroke-width="1.2"></path>
+            <text x="70" y="-120" class="label">Performance</text>
+            <g transform="translate(78,-120)">
+              <svg class="iconsvg" viewBox="0 0 24 24"><rect width="20" height="12" rx="2" ry="2" opacity="0.08" /></svg>
+            </g>
+          </g>
+
+          <!-- Slice 3: Creative Project (right-bottom) -->
+          <g id="slice-creative" class="slice" data-key="creative">
+            <path d="M0 0 L173 -100 A200 200 0 0 1 -200 0 z" fill="var(--accent3)" stroke="var(--edge)" stroke-width="1.2"></path>
+            <text x="80" y="40" class="label">Creative Project</text>
+            <g transform="translate(80,30)">
+              <svg class="iconsvg" viewBox="0 0 24 24"><polygon points="0,20 12,0 24,20" opacity="0.08"/></svg>
+            </g>
+          </g>
+
+          <!-- center -->
+          <circle class="center-circle" cx="0" cy="0" r="70"></circle>
+          <text x="0" y="0" class="label" dy="6">Choose a subject</text>
+
+          <!-- silhouettes cycling around the circle -->
+          <g id="silhouettes" style="pointer-events:none">
+            <circle class="sil" cx="-140" cy="120" r="6" fill="var(--edge)" />
+            <rect class="sil" x="120" y="-130" width="10" height="6" rx="2" fill="var(--edge)" />
+            <ellipse class="sil" cx="140" cy="30" rx="7" ry="4" fill="var(--edge)" />
+          </g>
+        </svg>
+      </div>
+
+      <div class="panel" id="optionsPanel" aria-live="polite"></div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:14px;">
+        <div>
+          <div class="tiny muted-note">Selected: <span id="selectedLabel">None</span></div>
+          <div class="total">Total: <span id="totalPrice">£0</span></div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn primary" id="applyBtn">APPLY NOW</button>
+          <button class="btn" id="contactBtn">Contact course leader</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="right card">
+      <div>
+        <div class="title" style="font-size:16px">Booking Summary</div>
+        <div class="subtitle tiny" id="summaryText">Choose a subject and number of blocks to see price & details.</div>
+      </div>
+
+      <div style="margin-top:12px;">
+        <div class="tiny">Blocks available</div>
+        <ul id="blocksList" style="padding-left:20px; margin-top:8px;">
+          <li><strong>Block 1:</strong> Sept–Dec</li>
+          <li><strong>Block 2:</strong> Jan–Mar</li>
+          <li><strong>Block 3:</strong> Apr–June</li>
+        </ul>
+      </div>
+
+      <div style="margin-top:14px;">
+        <div class="tiny">Quick info</div>
+        <div class="muted-note" id="quickInfo">Each block = 3 months. Prices are editable via admin panel (🔒).</div>
+      </div>
+
+      <div style="margin-top:16px;">
+        <div class="tiny">Accessibility</div>
+        <div class="muted-note">Keyboard navigation and clear labels. Admin edits stored locally.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- admin button -->
+<button class="dev-btn" id="devButton" title="Open admin panel">⚙</button>
+
+<!-- password prompt modal container -->
+<div id="modalContainer" style="display:none;"></div>
+
+<script>
+/* ---------------------------
+   Widget Data & State
+   --------------------------- */
+const defaultData = {
+  subjects: {
+    discipline: {
+      name: "Discipline",
+      desc: "Physical training focusing on Aerial, Acrobatics, or Manipulation.",
+      color: "#9fd8d6",
+      icon: "disc"
+    },
+    performance: {
+      name: "Performance",
+      desc: "Physical theatre & movement technique: making, direction, dance, contact improv.",
+      color: "#f1d08a",
+      icon: "perf"
+    },
+    creative: {
+      name: "Creative Project",
+      desc: "Mentored process to make a new act, research ideas or redevelop a piece.",
+      color: "#f3c1d1",
+      icon: "crea"
+    }
+  },
+  blocks: [
+    {id:1, label:"Block 1", months:"Sept–Dec", price:650},
+    {id:2, label:"Block 2", months:"Jan–Mar", price:650},
+    {id:3, label:"Block 3", months:"Block 3 Apr–June", price:650}
+  ],
+  currency: "£",
+  theme: "light",
+  applyUrl: "#",
+  contactUrl: "mailto:course@example.com",
+  adminPass: "4629"
+};
+
+function loadData(){
+  let raw = localStorage.getItem("circusDiplomaData");
+  if(!raw) { localStorage.setItem("circusDiplomaData", JSON.stringify(defaultData)); return JSON.parse(JSON.stringify(defaultData)); }
+  try { return Object.assign(JSON.parse(JSON.stringify(defaultData)), JSON.parse(raw)); } catch(e){ return JSON.parse(JSON.stringify(defaultData)); }
+}
+function saveData(d){ localStorage.setItem("circusDiplomaData", JSON.stringify(d)); }
+
+let state = {
+  data: loadData(),
+  selectedSubject: null,
+  selectedBlocks: 0
+};
+
+/* ---------------------------
+   DOM Bindings & Helpers
+   --------------------------- */
+const root = document.getElementById("widgetRoot");
+const selectedLabel = document.getElementById("selectedLabel");
+const totalPrice = document.getElementById("totalPrice");
+const optionsPanel = document.getElementById("optionsPanel");
+const summaryText = document.getElementById("summaryText");
+const monthsLabel = document.getElementById("monthsLabel");
+const themeLabel = document.getElementById("themeLabel");
+const blocksList = document.getElementById("blocksList");
+const applyBtn = document.getElementById("applyBtn");
+const contactBtn = document.getElementById("contactBtn");
+const devButton = document.getElementById("devButton");
+const modalContainer = document.getElementById("modalContainer");
+const pieSvg = document.getElementById("pieSvg");
+
+/* apply initial theme */
+root.setAttribute("data-theme", state.data.theme || "light");
+themeLabel.textContent = (state.data.theme === "dark") ? "Dark" : "Light";
+
+/* update blocks list (right side) */
+function renderBlocksList(){
+  blocksList.innerHTML = "";
+  state.data.blocks.forEach(b=>{
+    const li = document.createElement("li");
+    li.innerHTML = `<strong>${b.label}:</strong> ${b.months} — <span class="price-tag">${state.data.currency}${b.price}</span>`;
+    blocksList.appendChild(li);
+  });
+}
+renderBlocksList();
+
+/* populate pie slice colors & event listeners */
+function initSlices(){
+  const slices = [
+    {id:"slice-discipline", key:"discipline"},
+    {id:"slice-performance", key:"performance"},
+    {id:"slice-creative", key:"creative"}
+  ];
+  slices.forEach(s=>{
+    const el = document.getElementById(s.id);
+    const part = el.querySelector("path");
+    part.setAttribute("fill", state.data.subjects[s.key].color || getComputedStyle(document.documentElement).getPropertyValue('--accent1'));
+    el.addEventListener("click", ()=>selectSubject(s.key));
+    el.addEventListener("keydown", (ev)=>{ if(ev.key === 'Enter' || ev.key === ' ') selectSubject(s.key); });
+    el.setAttribute("tabindex","0");
+  });
+}
+initSlices();
+
+/* selects subject and renders booking options */
+function selectSubject(key){
+  state.selectedSubject = key;
+  state.selectedBlocks = 0;
+  selectedLabel.textContent = state.data.subjects[key].name;
+  summaryText.textContent = state.data.subjects[key].desc;
+  // highlight slice
+  document.querySelectorAll(".slice").forEach(s=> s.style.transform = "");
+  document.querySelector(`#slice-${key}`).style.transform = "scale(1.04)";
+  // show progression animation
+  document.getElementById("line1").classList.add("on");
+  document.getElementById("line2").classList.add("on");
+  // render options
+  renderOptions();
+  // small sound
+  subtleClick();
+}
+
+/* render block booking options */
+function renderOptions(){
+  optionsPanel.innerHTML = "";
+  if(!state.selectedSubject){
+    optionsPanel.innerHTML = `<div class="tiny muted-note">Select a subject slice to see booking options.</div>`;
+    return;
+  }
+  // create 3 block buttons
+  state.data.blocks.forEach((b, idx)=>{
+    const btn = document.createElement("button");
+    btn.className = "block-btn pulse focus-outline";
+    btn.innerHTML = `<div style="font-size:13px">${b.label}</div><div class="tiny">${b.months}</div><div class="price-tag">${state.data.currency}${b.price}</div>`;
+    btn.addEventListener("click", ()=> {
+      state.selectedBlocks = idx+1;
+      document.querySelectorAll(".block-btn").forEach(x=>x.classList.remove("active"));
+      btn.classList.add("active");
+      // calculate total = price * selectedBlocks
+      const total = state.data.blocks.slice(0, state.selectedBlocks).reduce((s,bb)=> s + bb.price, 0);
+      totalPrice.textContent = state.data.currency + total;
+      subtlePop();
+      // update small summary
+      summaryText.textContent = `${state.data.subjects[state.selectedSubject].desc} — Booking: ${state.selectedBlocks} block(s), Total: ${state.data.currency}${total}`;
+    });
+    optionsPanel.appendChild(btn);
+  });
+  // quick reset / info
+  const reset = document.createElement("div");
+  reset.style.width="100%";
+  reset.innerHTML = `<div class="muted-note tiny">Select 1, 2 or 3 blocks. Prices shown are per block. Changes editable via admin (🔒).</div>`;
+  optionsPanel.appendChild(reset);
+  totalPrice.textContent = state.data.currency + "0";
+}
+
+/* subtle audio feedback using WebAudio */
+let audioCtx;
+function ensureAudio(){
+  if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+function subtleClick(){
+  try{
+    ensureAudio();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(440, audioCtx.currentTime);
+    g.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.02, audioCtx.currentTime + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.12);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + 0.14);
+  }catch(e){}
+}
+function subtlePop(){
+  try{
+    ensureAudio();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'triangle'; o.frequency.setValueAtTime(520, audioCtx.currentTime);
+    g.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.04, audioCtx.currentTime + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.14);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + 0.16);
+  }catch(e){}
+}
+
+/* Apply & contact actions */
+applyBtn.addEventListener("click", ()=>{
+  subtleClick();
+  window.open(state.data.applyUrl || "#", "_blank");
+});
+contactBtn.addEventListener("click", ()=>{
+  subtleClick();
+  window.open(state.data.contactUrl || "mailto:course@example.com", "_blank");
+});
+
+/* Admin modal & editing */
+devButton.addEventListener("click", openPasswordPrompt);
+
+function openPasswordPrompt(){
+  modalContainer.innerHTML = `
+    <div class="modal-back" id="pwdBack">
+      <div class="modal" role="dialog" aria-modal="true">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div><strong>Admin Access</strong><div class="tiny">Enter password to edit widget parameters</div></div>
+          <button class="btn" id="closePwd">Close</button>
+        </div>
+        <div style="margin-top:12px;">
+          <div class="form-row"><label>Password</label><input id="pwdInput" type="password" placeholder="Enter admin password" /></div>
+          <div style="text-align:right"><button class="btn primary" id="pwdSubmit">Unlock</button></div>
+        </div>
+      </div>
+    </div>
+  `;
+  modalContainer.style.display = "block";
+  document.getElementById("closePwd").addEventListener("click", ()=>{ modalContainer.style.display="none"; modalContainer.innerHTML=""; });
+  document.getElementById("pwdSubmit").addEventListener("click", ()=> {
+    const val = document.getElementById("pwdInput").value;
+    if(val === state.data.adminPass){
+      modalContainer.innerHTML = "";
+      modalContainer.style.display="none";
+      openAdminPanel();
+    } else {
+      alert("Incorrect password.");
+    }
+  });
+}
+
+function openAdminPanel(){
+  // build admin UI (editable fields)
+  modalContainer.innerHTML = `
+    <div class="modal-back" id="adminBack">
+      <div class="modal" role="dialog" aria-modal="true">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div><strong>Widget Admin Panel</strong><div class="tiny">Change names, months, prices, colors, links, theme</div></div>
+          <div><button class="btn" id="admClose">Close</button></div>
+        </div>
+        <div style="margin-top:12px; max-height:60vh; overflow:auto;">
+          <div style="border-top:1px solid var(--muted); padding-top:10px;">
+            <div class="form-row"><label>Theme</label>
+              <select id="adminTheme">
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
+            </div>
+            <div class="form-row"><label>Currency</label><input id="adminCurrency" value="${state.data.currency}" /></div>
+            <div class="form-row"><label>Apply URL</label><input id="adminApply" value="${state.data.applyUrl}" /></div>
+            <div class="form-row"><label>Contact URL</label><input id="adminContact" value="${state.data.contactUrl}" /></div>
+          </div>
+
+          <div style="border-top:1px solid var(--muted); padding-top:10px; margin-top:10px;">
+            <div style="font-weight:800; margin-bottom:8px">Subject labels & colors</div>
+            ${Object.keys(state.data.subjects).map(k=> {
+              const s = state.data.subjects[k];
+              return `<div class="form-row"><label>${s.name}</label>
+                        <input data-sub="${k}" class="subLabel" value="${s.name}" />
+                        <input data-subcol="${k}" class="subColor" value="${s.color}" style="width:100px; margin-left:8px;" />
+                      </div>`;
+            }).join('')}
+          </div>
+
+          <div style="border-top:1px solid var(--muted); padding-top:10px; margin-top:10px;">
+            <div style="font-weight:800; margin-bottom:8px">Blocks & prices</div>
+            ${state.data.blocks.map((b,idx)=> `
+              <div class="form-row">
+                <label>Block ${b.id}</label>
+                <input data-blockidx="${idx}" class="blockLabel" value="${b.label}" />
+                <input data-blockmonths="${idx}" class="blockMonths" value="${b.months}" style="width:140px; margin-left:8px;" />
+                <input data-blockprice="${idx}" class="blockPrice" value="${b.price}" style="width:100px; margin-left:8px;" />
+              </div>
+            `).join('')}
+          </div>
+
+          <div style="border-top:1px solid var(--muted); padding-top:10px; margin-top:10px;">
+            <div class="form-row"><label>Admin password</label><input id="adminPass" value="${state.data.adminPass}" /></div>
+            <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:10px;">
+              <button class="btn" id="resetDefaults">Reset to defaults</button>
+              <button class="btn primary" id="saveAdmin">Save changes</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  modalContainer.style.display = "block";
+  document.getElementById("admClose").addEventListener("click", ()=>{ modalContainer.style.display="none"; modalContainer.innerHTML=""; });
+  document.getElementById("resetDefaults").addEventListener("click", ()=>{ if(confirm("Reset to defaults?")) { localStorage.removeItem("circusDiplomaData"); state.data = loadData(); applyAllSettings(); modalContainer.style.display="none"; modalContainer.innerHTML=""; }});
+  document.getElementById("saveAdmin").addEventListener("click", saveAdminChanges);
+  // set theme value
+  document.getElementById("adminTheme").value = state.data.theme || "light";
+}
+
+function saveAdminChanges(){
+  // basic inputs
+  const theme = document.getElementById("adminTheme").value;
+  const currency = document.getElementById("adminCurrency").value;
+  const applyUrl = document.getElementById("adminApply").value;
+  const contactUrl = document.getElementById("adminContact").value;
+  state.data.theme = theme;
+  state.data.currency = currency || "£";
+  state.data.applyUrl = applyUrl || "#";
+  state.data.contactUrl = contactUrl || "mailto:course@example.com";
+
+  // subjects
+  document.querySelectorAll(".subLabel").forEach(inp=>{
+    const key = inp.getAttribute("data-sub");
+    state.data.subjects[key].name = inp.value;
+  });
+  document.querySelectorAll(".subColor").forEach(inp=>{
+    const key = inp.getAttribute("data-subcol");
+    state.data.subjects[key].color = inp.value;
+  });
+
+  // blocks
+  document.querySelectorAll(".blockLabel").forEach(inp=>{
+    const idx = parseInt(inp.getAttribute("data-blockidx"),10);
+    state.data.blocks[idx].label = inp.value;
+  });
+  document.querySelectorAll(".blockMonths").forEach(inp=>{
+    const idx = parseInt(inp.getAttribute("data-blockmonths"),10);
+    state.data.blocks[idx].months = inp.value;
+  });
+  document.querySelectorAll(".blockPrice").forEach(inp=>{
+    const idx = parseInt(inp.getAttribute("data-blockprice"),10);
+    state.data.blocks[idx].price = Number(inp.value) || 0;
+  });
+
+  // admin pass
+  const newPass = document.getElementById("adminPass").value.trim();
+  if(newPass) state.data.adminPass = newPass;
+
+  saveData(state.data);
+  applyAllSettings();
+  // close
+  modalContainer.style.display = "none";
+  modalContainer.innerHTML = "";
+}
+
+/* apply settings to UI */
+function applyAllSettings(){
+  // theme
+  root.setAttribute("data-theme", state.data.theme || "light");
+  themeLabel.textContent = (state.data.theme === "dark") ? "Dark" : "Light";
+  // labels for months quick display
+  monthsLabel.textContent = state.data.blocks.map(b=>b.months).join(" • ");
+  // update block list summary
+  renderBlocksList();
+  // update slices color and labels
+  Object.keys(state.data.subjects).forEach(k=>{
+    const s = state.data.subjects[k];
+    const g = document.querySelector(`#slice-${k}`);
+    if(!g) return;
+    const path = g.querySelector("path");
+    path.setAttribute("fill", s.color);
+    const txt = g.querySelector(".label");
+    if(txt) txt.textContent = s.name;
+  });
+  // update apply / contact URLs
+  applyBtn.onclick = ()=>{ subtleClick(); window.open(state.data.applyUrl || "#", "_blank"); };
+  contactBtn.onclick = ()=>{ subtleClick(); window.open(state.data.contactUrl || "mailto:course@example.com", "_blank"); };
+  // re-render options if selected
+  renderOptions();
+  // update small labels
+  monthsLabel.textContent = state.data.blocks.map(b=>b.months).join(" • ");
+  // update accent CSS vars (optional)
+  document.documentElement.style.setProperty('--accent1', state.data.subjects.discipline.color);
+  document.documentElement.style.setProperty('--accent2', state.data.subjects.performance.color);
+  document.documentElement.style.setProperty('--accent3', state.data.subjects.creative.color);
+}
+
+/* initial apply */
+applyAllSettings();
+
+/* small accessibility keys */
+document.addEventListener("keydown", (e)=>{
+  if(e.key === "Escape") {
+    modalContainer.style.display="none";
+    modalContainer.innerHTML="";
+  }
+});
+
+/* Ensure focus outlines for keyboard users */
+document.querySelectorAll(".slice, .block-btn, .btn, .dev-btn").forEach(el=>{
+  el.addEventListener("focus", ()=> el.classList.add("focus-outline"));
+  el.addEventListener("blur", ()=> el.classList.remove("focus-outline"));
+});
+
+/* Mobile friendly: make svg scale */
+window.addEventListener("resize", ()=> {
+  // keep it responsive; no action required but placeholder to add if necessary
+});
+
+/* initial render state */
+renderOptions();
+
+/* small niceties: clicking outside admin closes */
+document.addEventListener("click", (ev)=>{
+  if(ev.target && ev.target.matches && ev.target.matches('.modal-back')) {
+    ev.target.style.display = 'none';
+    modalContainer.innerHTML = '';
+  }
+});
+</script>
+</body>
+</html>
